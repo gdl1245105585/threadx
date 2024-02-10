@@ -1,0 +1,1 @@
+/usr/bin/cc -g    -g   -Wl,--gc-sections CMakeFiles/ProjectHelloWorld.dir/main.c.o  -o ProjectHelloWorld  lib/libthreadx.a /home/guodl/Desktop/ics2023/abstract-machine/am/build/am-native.a -lm -ldl -lSDL2 

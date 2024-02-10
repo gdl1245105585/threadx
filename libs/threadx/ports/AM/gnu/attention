@@ -1,0 +1,2 @@
+TX_MINIMUM_STACK can be less than 1112,because of the context size; 
+so  in the main function,the stack size must be bigger than 1112;

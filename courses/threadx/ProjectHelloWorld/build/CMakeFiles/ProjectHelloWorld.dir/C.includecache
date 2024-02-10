@@ -1,0 +1,32 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/guodl/Desktop/azure-rtos-learn-samples/courses/threadx/ProjectHelloWorld/main.c
+tx_api.h
+/home/guodl/Desktop/azure-rtos-learn-samples/courses/threadx/ProjectHelloWorld/tx_api.h
+stdio.h
+-
+
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/common/inc/tx_api.h
+tx_port.h
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/common/inc/tx_port.h
+tx_execution_profile.h
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/common/inc/tx_execution_profile.h
+tx_api_extension.h
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/common/inc/tx_api_extension.h
+tx_el.h
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/common/inc/tx_el.h
+
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/ports/AM/gnu/inc/tx_port.h
+string.h
+-
+tx_user.h
+/home/guodl/Desktop/azure-rtos-learn-samples/libs/threadx/ports/AM/gnu/inc/tx_user.h
+
+lib/custom_inc/tx_user.h
+
