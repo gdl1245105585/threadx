@@ -28,7 +28,7 @@
 #include "tx_api.h"
 #include "tx_thread.h"
 #include "tx_timer.h"
-#include <stdio.h>
+// #include <stdio.h>
 
 #include "am.h"
 #include <stdbool.h>
@@ -88,12 +88,19 @@ extern bool save_flag;
 VOID   _tx_thread_system_return(VOID)
 {
    
-   save_flag ++;
-   printf("in return\n");
-   assert(_tx_thread_current_ptr);
    
-   yield();
-   printf("out return\n");
+  // printf("in return\n");
+   // if(_tx_thread_current_ptr == NULL)
+   // {
+
+   // }
+   // else 
+   // {
+   //    save_flag ++;
+   //    yield();
+   // }
+   
+  // printf("out return\n");
    iset(0);
 #ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
    _tx_execution_thread_exit();                   // Call the thread execution exit function

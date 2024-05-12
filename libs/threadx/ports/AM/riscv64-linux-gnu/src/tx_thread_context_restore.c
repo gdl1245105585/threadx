@@ -28,19 +28,16 @@
 
 #include "tx_api.h"
 #include "tx_thread.h"
-#include <stdio.h>
-#include <unistd.h>
-#include "am.h"
-#include <assert.h>
-/* Prototype for new thread entry function.  */
+#include "tx_timer.h"
 
+#include "am.h"
 
 
 /**************************************************************************/ 
 /*                                                                        */ 
 /*  FUNCTION                                               RELEASE        */ 
 /*                                                                        */ 
-/*    _tx_thread_stack_build                              Linux/GNU       */ 
+/*    _tx_thread_context_restore                          Linux/GNU       */ 
 /*                                                           6.1          */
 /*  AUTHOR                                                                */
 /*                                                                        */
@@ -48,32 +45,32 @@
 /*                                                                        */
 /*  DESCRIPTION                                                           */
 /*                                                                        */ 
-/*    This function builds a stack frame on the supplied thread's stack.  */
-/*    The stack frame results in a fake interrupt return to the supplied  */
-/*    function pointer.                                                   */ 
+/*    This function restores the interrupt context if it is processing a  */ 
+/*    nested interrupt.  If not, it returns to the interrupt thread if no */ 
+/*    preemption is necessary.  Otherwise, if preemption is necessary or  */ 
+/*    if no thread was running, the function returns to the scheduler.    */ 
 /*                                                                        */ 
 /*  INPUT                                                                 */ 
 /*                                                                        */ 
-/*    thread_ptr                            Pointer to thread control blk */
-/*    function_ptr                          Pointer to return function    */
+/*    None                                                                */ 
 /*                                                                        */ 
 /*  OUTPUT                                                                */ 
 /*                                                                        */ 
-/*    None                                                                */
+/*    None                                                                */ 
 /*                                                                        */ 
 /*  CALLS                                                                 */ 
 /*                                                                        */ 
-/*    pthread_create                                                      */ 
-/*    pthread_setschedparam                                               */ 
-/*    _tx_linux_thread_suspend                                            */ 
-/*    sem_init                                                            */ 
-/*    printf                                                              */ 
+/*    _tx_linux_debug_entry_insert                                        */ 
+/*    tx_linux_mutex_lock                                                 */ 
+/*    sem_trywait                                                         */
+/*    tx_linux_sem_post                                                   */ 
+/*    tx_linux_sem_wait                                                   */ 
 /*    _tx_linux_thread_resume                                             */ 
+/*    tx_linux_mutex_recursive_unlock                                     */ 
 /*                                                                        */ 
 /*  CALLED BY                                                             */ 
 /*                                                                        */ 
-/*    _tx_thread_create                     Create thread service         */
-/*    _tx_thread_reset                      Reset thread service          */ 
+/*    ISRs                                  Interrupt Service Routines    */ 
 /*                                                                        */ 
 /*  RELEASE HISTORY                                                       */ 
 /*                                                                        */ 
@@ -82,23 +79,92 @@
 /*  09-30-2020     William E. Lamie         Initial Version 6.1           */
 /*                                                                        */
 /**************************************************************************/
-Context  ref;
-VOID   _tx_thread_stack_build(TX_THREAD *thread_ptr, VOID (*function_ptr)(VOID))
+
+
+extern bool save_flag;
+extern TX_THREAD * recovery_thread;
+void _tx_thread_not_nested_restore();
+void _tx_thread_nested_restore();
+void _tx_thread_idle_system_restore();
+void _tx_thread_preempt_restore();
+void _tx_thread_dont_save_ts();
+void _tx_thread_no_preempt_restore();
+
+VOID   _tx_thread_context_restore(VOID)
 {
-  
-
-  Area kstack;
-
-
-  // kstack.end= thread_ptr->tx_thread_stack_start + sizeof(Context) ;
-  // kstack.start = thread_ptr->tx_thread_stack_start;
-
-  kstack.end = thread_ptr->tx_thread_stack_end -(uintptr_t)thread_ptr->tx_thread_stack_end % sizeof(uintptr_t);
-  kstack.start = thread_ptr->tx_thread_stack_start ;
-
-  
-  Context *context = kcontext(kstack, function_ptr, NULL);
-  printf("context :%p  \n",context);
-  thread_ptr->tx_thread_stack_ptr = context;
+    iset(0);
+#ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
+    _tx_execution_isr_exit();                      // Call the ISR execution exit function
+#endif
+    --_tx_thread_system_state;
+    if(_tx_thread_system_state == 0)  //not nested store
+    {
+        _tx_thread_not_nested_restore();
+    }
+    else
+    {
+        _tx_thread_nested_restore();
+    }
 }
 
+void _tx_thread_not_nested_restore()
+{
+
+      if(_tx_thread_current_ptr == 0)
+      {
+            _tx_thread_idle_system_restore();
+            return;
+      }
+ 
+      if(_tx_thread_preempt_disable >0)
+      {
+            _tx_thread_no_preempt_restore();
+            return ;
+      }
+           
+      if(_tx_thread_execute_ptr != _tx_thread_current_ptr)
+      {
+            _tx_thread_preempt_restore();
+            return;
+      }
+} 
+void _tx_thread_nested_restore()
+{
+      recovery_thread = _tx_thread_current_ptr;
+      yield();
+}
+
+void _tx_thread_idle_system_restore()
+{
+      _tx_thread_schedule();
+}
+
+void _tx_thread_preempt_restore()
+{
+      save_flag++;
+      yield();
+      if(_tx_timer_time_slice == 0)
+      {
+            _tx_thread_dont_save_ts();
+      }
+      else 
+      {
+            _tx_thread_current_ptr -> tx_thread_time_slice =  _tx_timer_time_slice;
+            _tx_timer_time_slice =  0;
+      }
+            
+}
+
+void _tx_thread_dont_save_ts()
+{
+      _tx_thread_current_ptr =  TX_NULL;
+      _tx_thread_idle_system_restore();
+
+}
+
+void _tx_thread_no_preempt_restore()
+{
+      recovery_thread = _tx_thread_current_ptr;
+      yield();
+      return ;
+}

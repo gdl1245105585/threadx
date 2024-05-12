@@ -28,7 +28,7 @@
 
 #include "tx_api.h"
 #include "tx_thread.h"
-#include <stdio.h>
+// #include <stdio.h>
 #include <unistd.h>
 #include "am.h"
 #include <assert.h>
@@ -93,12 +93,12 @@ VOID   _tx_thread_stack_build(TX_THREAD *thread_ptr, VOID (*function_ptr)(VOID))
   // kstack.end= thread_ptr->tx_thread_stack_start + sizeof(Context) ;
   // kstack.start = thread_ptr->tx_thread_stack_start;
 
-  kstack.end = thread_ptr->tx_thread_stack_end -(uintptr_t)thread_ptr->tx_thread_stack_end % sizeof(uintptr_t);
+  kstack.end = thread_ptr->tx_thread_stack_end ;//-(uintptr_t)thread_ptr->tx_thread_stack_end %16;
   kstack.start = thread_ptr->tx_thread_stack_start ;
 
   
   Context *context = kcontext(kstack, function_ptr, NULL);
-  printf("context :%p  \n",context);
+  //printf("%p %p \n",kstack.end,kstack.start);
   thread_ptr->tx_thread_stack_ptr = context;
 }
 

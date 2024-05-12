@@ -15,40 +15,36 @@
 /**                                                                       */
 /** ThreadX Component                                                     */
 /**                                                                       */
-/**   Thread                                                              */
+/**   Timer                                                               */
 /**                                                                       */
 /**************************************************************************/
 /**************************************************************************/
 
-
 #define TX_SOURCE_CODE
-
 
 /* Include necessary system files.  */
 
 #include "tx_api.h"
-#include "tx_thread.h"
 #include "tx_timer.h"
-
-
-
-#include "am.h"
+#include "tx_thread.h"
 
 /**************************************************************************/
 /*                                                                        */
 /*  FUNCTION                                               RELEASE        */
 /*                                                                        */
-/*    _tx_thread_schedule                                 Linux/GNU       */ 
-/*                                                           6.1          */
+/*    _tx_timer_interrupt                                RISC-V64/GNU     */
+/*                                                           6.2.1        */
 /*  AUTHOR                                                                */
 /*                                                                        */
-/*    William E. Lamie, Microsoft Corporation                             */
+/*    Scott Larson, Microsoft Corporation                                 */
 /*                                                                        */
 /*  DESCRIPTION                                                           */
 /*                                                                        */
-/*    This function waits for a thread control block pointer to appear in */
-/*    the _tx_thread_execute_ptr variable.  Once a thread pointer appears */
-/*    in the variable, the corresponding thread is resumed.               */
+/*    This function processes the hardware timer interrupt.  This         */
+/*    processing includes incrementing the system clock and checking for  */
+/*    time slice and/or timer expiration.  If either is found, the        */
+/*    interrupt context save/restore functions are called along with the  */
+/*    expiration functions.                                               */
 /*                                                                        */
 /*  INPUT                                                                 */
 /*                                                                        */
@@ -60,85 +56,80 @@
 /*                                                                        */
 /*  CALLS                                                                 */
 /*                                                                        */
-/*    tx_linux_mutex_lock                                                 */
-/*    tx_linux_mutex_unlock                                               */
-/*    _tx_linux_debug_entry_insert                                        */
-/*    _tx_linux_thread_resume                                             */
-/*    tx_linux_sem_post                                                   */
-/*    sem_trywait                                                         */
-/*    tx_linux_sem_wait                                                   */
+/*    _tx_timer_expiration_process          Timer expiration processing   */
+/*    _tx_thread_time_slice                 Time slice interrupted thread */
 /*                                                                        */
 /*  CALLED BY                                                             */
 /*                                                                        */
-/*    _tx_initialize_kernel_enter          ThreadX entry function         */
+/*    interrupt vector                                                    */
 /*                                                                        */
 /*  RELEASE HISTORY                                                       */
 /*                                                                        */
 /*    DATE              NAME                      DESCRIPTION             */
 /*                                                                        */
-/*  09-30-2020     William E. Lamie         Initial Version 6.1           */
+/*  03-08-2023      Scott Larson            Initial Version 6.2.1         */
 /*                                                                        */
 /**************************************************************************/
-extern TX_THREAD * recovery_thread;
-extern TX_THREAD * save_thread;
-extern int save_flag;
-void _tx_thread_synch_return();
-VOID   _tx_thread_schedule(VOID)
+VOID   _tx_timer_interrupt(VOID)
 {
-   iset(1);
-   while (_tx_thread_execute_ptr == TX_NULL);
-   iset(0);
+    /* Increment system clock. */
+    _tx_timer_system_clock++;
 
-   bool diff =   (_tx_thread_current_ptr != _tx_thread_execute_ptr  && _tx_thread_current_ptr != NULL)
-                  | (save_thread != NULL);
+    /* Test for time-slice expiration. */
+    if (_tx_timer_time_slice)
+    {
+        /* Decrement the time_slice.  */
+        _tx_timer_time_slice--;
 
-   TX_THREAD * TO_SAVE = _tx_thread_current_ptr;
+        /* Check for expiration.  */
+        if (_tx_timer_time_slice == 0)
+        {
 
-   // Setup the current thread pointer
-   _tx_thread_current_ptr = _tx_thread_execute_ptr;
+           /* Set the time-slice expired flag.  */
+           _tx_timer_expired_time_slice =  TX_TRUE;
+        }
+    }
 
-   // Increment the run count for this thread
-   _tx_thread_current_ptr->tx_thread_run_count++;
+    /* Test for timer expiration.  */
+    if (*_tx_timer_current_ptr)
+    {
 
-   // Setup time-slice, if present
-   _tx_timer_time_slice = _tx_thread_current_ptr->tx_thread_time_slice;
+        /* Set expiration flag.  */
+        _tx_timer_expired =  TX_TRUE;
+    }
+    else
+    {
 
-   #ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
-      _tx_execution_thread_enter()  // Call the thread execution enter function
-   #endif
+        /* No timer expired, increment the timer pointer.  */
+        _tx_timer_current_ptr++;
 
+        /* Check for wrap-around.  */
+        if (_tx_timer_current_ptr == _tx_timer_list_end)
+        {
 
+            /* Wrap to beginning of list.  */
+            _tx_timer_current_ptr =  _tx_timer_list_start;
+        }
+    }
 
-   if(_tx_thread_current_ptr == TO_SAVE )
-   {
+    /* See if anything has expired.  */
+    if ((_tx_timer_expired_time_slice) || (_tx_timer_expired))
+    {
 
-   }
-   else
-   {
-      if(diff == 0)
-      {
-        // printf("schedule not diff\n");
-         recovery_thread = _tx_thread_execute_ptr ;
-         _tx_thread_execute_ptr = NULL;
-         yield(); 
-      }
-      else
-      {
-        // printf("schedule not\n");
-         save_flag ++;
-         save_thread = save_thread != NULL ? save_thread :TO_SAVE ;
-         recovery_thread = _tx_thread_execute_ptr ;
-         
-         yield();      
-      } 
-   }
-      
-   // }
-}
+        /* Did a timer expire?  */
+        if (_tx_timer_expired)
+        {
 
-void _tx_thread_synch_return()
-{
-      recovery_thread = _tx_thread_execute_ptr;
-      yield();   //the recovery thread is not current
+            /* Process timer expiration.  */
+            _tx_timer_expiration_process();
+        }
 
+        /* Did time slice expire?  */
+        if (_tx_timer_expired_time_slice)
+        {
+
+            /* Time slice interrupted thread.  */
+            _tx_thread_time_slice();
+        }
+    }
 }

@@ -80,19 +80,12 @@
 /*                                                                        */
 /**************************************************************************/
 extern TX_THREAD * recovery_thread;
-extern TX_THREAD * save_thread;
-extern int save_flag;
 void _tx_thread_synch_return();
 VOID   _tx_thread_schedule(VOID)
 {
    iset(1);
    while (_tx_thread_execute_ptr == TX_NULL);
    iset(0);
-
-   bool diff =   (_tx_thread_current_ptr != _tx_thread_execute_ptr  && _tx_thread_current_ptr != NULL)
-                  | (save_thread != NULL);
-
-   TX_THREAD * TO_SAVE = _tx_thread_current_ptr;
 
    // Setup the current thread pointer
    _tx_thread_current_ptr = _tx_thread_execute_ptr;
@@ -108,31 +101,16 @@ VOID   _tx_thread_schedule(VOID)
    #endif
 
 
-
-   if(_tx_thread_current_ptr == TO_SAVE )
-   {
-
-   }
-   else
-   {
-      if(diff == 0)
-      {
-        // printf("schedule not diff\n");
-         recovery_thread = _tx_thread_execute_ptr ;
-         _tx_thread_execute_ptr = NULL;
-         yield(); 
-      }
-      else
-      {
-        // printf("schedule not\n");
-         save_flag ++;
-         save_thread = save_thread != NULL ? save_thread :TO_SAVE ;
-         recovery_thread = _tx_thread_execute_ptr ;
-         
-         yield();      
-      } 
-   }
-      
+   //There neet to determen if there is interrupt frame and synch frame;
+   // void* sp = _tx_thread_execute_ptr -> tx_thread_stack_ptr;
+   // if(*(int*)sp == 0)
+   // {
+   //    _tx_thread_synch_return();
+   // }
+   // else 
+   // {
+      recovery_thread = _tx_thread_execute_ptr ;
+      yield();   
    // }
 }
 

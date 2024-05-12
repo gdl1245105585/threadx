@@ -30,10 +30,11 @@
 #include "tx_thread.h"
 #include "tx_timer.h"
 
-#include <stdio.h>
+ #include <stdio.h>
+// #include <stdlib.h>
 
 #include "am.h"
-#include <assert.h>
+ #include <assert.h>
 /**************************************************************************/ 
 /*                                                                        */ 
 /*  FUNCTION                                               RELEASE        */ 
@@ -79,44 +80,61 @@
 int save_flag;
 TX_THREAD * recovery_thread;
 VOID   _tx_timer_interrupt(VOID);
-extern Context * ref;
-
+TX_THREAD * save_thread;
 static Context* ev_handler(Event e, Context *c) {
       switch (e.event) {
             case EVENT_YIELD: {
+                  //printf("in yield\n");
                   if(save_flag)
                   {
-                       // printf("save\n");
-                        save_flag = 0;
-                        memcpy(_tx_thread_current_ptr -> tx_thread_stack_ptr,c, sizeof(Context));
-                       // printf("save out\n");
+                        // Context *temp = (Context*)malloc(sizeof(Context));
+                        // _tx_thread_current_ptr->tx_thread_stack_ptr = temp;
+                        // *temp = *c;
                         
+                        assert(recovery_thread);
+                        save_thread->tx_thread_stack_ptr = c;
+                        save_thread = NULL;
+                        save_flag = 0;
+                       // printf("save out %p restore to %p %p\n",c,recovery_thread -> tx_thread_stack_ptr,c->uc.uc_mcontext.gregs[REG_RIP]);
+                        
+                        c = recovery_thread -> tx_thread_stack_ptr;
+                        //printf("%p\n",c->uc.uc_mcontext.gregs[REG_RIP]);
+
                         break;
                   }      
                   else  
                   {
-                       // printf("restore\n");
+                        //printf("restore :%p\n",recovery_thread -> tx_thread_stack_ptr);
                         
-                        unsigned long sp = c->GPRSP;
-                     
-                        memcpy(c,recovery_thread -> tx_thread_stack_ptr, sizeof(Context));
-                        c->GPRSP = sp;
+
+                        
+                        // Context * temp = recovery_thread -> tx_thread_stack_ptr;
+                        c = recovery_thread -> tx_thread_stack_ptr;
+                       // printf("%p\n",c->uc.uc_mcontext.gregs[REG_RIP]);
+                        //printf("restore sp :%p\n",recovery_thread -> tx_thread_stack_ptr);
+                        // memcpy(c,recovery_thread -> tx_thread_stack_ptr, sizeof(Context));
+                        // memset(recovery_thread -> tx_thread_stack_ptr,0,sizeof(Context));
+                       // c->GPRSP = sp;
+                       // printf("restore out %p %p %p\n",c,&c->uc.uc_mcontext.gregs[REG_RIP],c->uc.uc_mcontext.gregs[REG_RIP]);
                         break; 
                   }
+                  
             }
             case EVENT_IRQ_TIMER: {
-                  printf("time irq\n");
-                  /* Call ThreadX context save for interrupt preparation.  */
-                  _tx_thread_context_save();
+                 // printf("time irq\n");
 
-                  /* Call the ThreadX system timer interrupt processing.  */
                   _tx_timer_interrupt();
+                  /* Call the ThreadX system timer interrupt processing.  */
+                  
 
-                  /* Call ThreadX context restore for interrupt completion.  */
-                  _tx_thread_context_restore();
+                  // /* Call ThreadX context save for interrupt preparation.  */
+                  // _tx_thread_context_save();
+
+                  // /* Call ThreadX context restore for interrupt completion.  */
+                  // _tx_thread_context_restore();
                   break;
             } 
-            default: printf("Unhandled event ID = %d\n", e.event); assert(0);
+            default:printf("Unhandled event ID = %d\n", e.event); assert(0); break;
       }
       return c;
 }
@@ -132,42 +150,55 @@ void _tx_thread_idle_system_save();
 
 VOID   _tx_thread_context_save(VOID)
 {
-      if(_tx_thread_system_state == 0)  //not nested store
-      {
-            _tx_thread_not_nested_save();
-      }
-      else
-      {
-            _tx_thread_nested_save();
-      }
+//       //printf("save in\n");
+//       if ((_tx_thread_current_ptr) && (_tx_thread_system_state == 0))
+//       {
+//             save_flag++;
+//             yield();   //stack_pointer may cause the memory leak
+//       }
+
+       _tx_thread_system_state++;
 }
 
-void _tx_thread_not_nested_save()
-{
-      _tx_thread_system_state++;
-      if(_tx_thread_current_ptr == NULL)   //question
-            _tx_thread_idle_system_save();
-      else 
-      {
-            save_flag++;
-            yield();   //stack_pointer may cause the memory leak
-      }
+
+// VOID   _tx_thread_context_save(VOID)
+// {
+//       if(_tx_thread_system_state == 0)  //not nested store
+//       {
+//             _tx_thread_not_nested_save();
+//       }
+//       else
+//       {
+//             _tx_thread_nested_save();
+//       }
+// }
+// 
+// void _tx_thread_not_nested_save()
+// {
+//       _tx_thread_system_state++;
+//       if(_tx_thread_current_ptr == NULL)   //question
+//             _tx_thread_idle_system_save();
+//       else 
+//       {
+//             save_flag++;
+//             yield();   //stack_pointer may cause the memory leak
+//       }
            
-}
+// }
 
 
-void _tx_thread_nested_save()
-{
-      _tx_thread_system_state++;
-      save_flag++;
-      yield();
-}
+// void _tx_thread_nested_save()
+// {
+//       _tx_thread_system_state++;
+//       save_flag++;
+//       yield();
+// }
 
-void _tx_thread_idle_system_save()
-{
-#ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
-      _tx_execution_isr_enter()                     // Call the ISR execution enter function
-#endif
+// void _tx_thread_idle_system_save()
+// {
+// #ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
+//       _tx_execution_isr_enter()                     // Call the ISR execution enter function
+// #endif
 
-}
+// }
       

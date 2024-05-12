@@ -30,14 +30,16 @@
 #include "tx_thread.h"
 #include "tx_timer.h"
 
+// #include <stdio.h>
+// #include <stdlib.h>
+
 #include "am.h"
-
-
+// #include <assert.h>
 /**************************************************************************/ 
 /*                                                                        */ 
 /*  FUNCTION                                               RELEASE        */ 
 /*                                                                        */ 
-/*    _tx_thread_context_restore                          Linux/GNU       */ 
+/*    _tx_thread_context_save                             Linux/GNU       */ 
 /*                                                           6.1          */
 /*  AUTHOR                                                                */
 /*                                                                        */
@@ -45,10 +47,9 @@
 /*                                                                        */
 /*  DESCRIPTION                                                           */
 /*                                                                        */ 
-/*    This function restores the interrupt context if it is processing a  */ 
-/*    nested interrupt.  If not, it returns to the interrupt thread if no */ 
-/*    preemption is necessary.  Otherwise, if preemption is necessary or  */ 
-/*    if no thread was running, the function returns to the scheduler.    */ 
+/*    This function saves the context of an executing thread in the       */ 
+/*    beginning of interrupt processing.  The function also ensures that  */ 
+/*    the system stack is used upon return to the calling ISR.            */ 
 /*                                                                        */ 
 /*  INPUT                                                                 */ 
 /*                                                                        */ 
@@ -62,15 +63,12 @@
 /*                                                                        */ 
 /*    _tx_linux_debug_entry_insert                                        */ 
 /*    tx_linux_mutex_lock                                                 */ 
-/*    sem_trywait                                                         */
-/*    tx_linux_sem_post                                                   */ 
-/*    tx_linux_sem_wait                                                   */ 
-/*    _tx_linux_thread_resume                                             */ 
-/*    tx_linux_mutex_recursive_unlock                                     */ 
+/*    _tx_linux_thread_suspend                                            */ 
+/*    tx_linux_mutex_unlock                                               */ 
 /*                                                                        */ 
 /*  CALLED BY                                                             */ 
 /*                                                                        */ 
-/*    ISRs                                  Interrupt Service Routines    */ 
+/*    ISRs                                                                */ 
 /*                                                                        */ 
 /*  RELEASE HISTORY                                                       */ 
 /*                                                                        */ 
@@ -79,103 +77,125 @@
 /*  09-30-2020     William E. Lamie         Initial Version 6.1           */
 /*                                                                        */
 /**************************************************************************/
+int save_flag;
+TX_THREAD * recovery_thread;
+VOID   _tx_timer_interrupt(VOID);
+Context * ref;
 
-extern TX_THREAD * save_thread;
-extern bool save_flag;
-extern TX_THREAD * recovery_thread;
-void _tx_thread_not_nested_restore();
-void _tx_thread_nested_restore();
-void _tx_thread_idle_system_restore();
-void _tx_thread_preempt_restore();
-void _tx_thread_dont_save_ts();
-void _tx_thread_no_preempt_restore();
+static Context* ev_handler(Event e, Context *c) {
+      switch (e.event) {
+            case EVENT_YIELD: {
+                  //printf("in yield\n");
+                  if(save_flag)
+                  {
+                        // Context *temp = (Context*)malloc(sizeof(Context));
+                        // _tx_thread_current_ptr->tx_thread_stack_ptr = temp;
+                        // *temp = *c;
+                        
+                        Context temp;
+                        temp = *c;
+                        _tx_thread_current_ptr->tx_thread_stack_ptr = &temp;
+                        save_flag = 0;
+                        //printf("sp:%x\n",cur_sp);
+                        //
+                        
+                        
+                        break;
+                  }      
+                  else  
+                  {
+                        //printf("restore :%p\n",recovery_thread);
+                        
 
-VOID   _tx_thread_context_restore(VOID)
-{
-    iset(0);
-#ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
-    _tx_execution_isr_exit();                      // Call the ISR execution exit function
-#endif
-    --_tx_thread_system_state;
-    if(_tx_thread_system_state == 0)  //not nested store
-    {
-        _tx_thread_not_nested_restore();
-    }
-    else
-    {
-        _tx_thread_nested_restore();
-    }
-}
-
-void _tx_thread_not_nested_restore()
-{
-
-      if(_tx_thread_current_ptr == 0)
-      {
-            _tx_thread_idle_system_restore();
-            return;
-      }
- 
-      if(_tx_thread_preempt_disable >0)
-      {
-            _tx_thread_no_preempt_restore();
-            return ;
-      }
-           
-      if(_tx_thread_execute_ptr != _tx_thread_current_ptr)
-      {
-            _tx_thread_preempt_restore();
-            return;
-      }
-} 
-void _tx_thread_nested_restore()
-{
-
-      printf("_tx_thread_nested_restore\n");
-
-      save_flag++;
-      if(save_thread == NULL)  save_thread = _tx_thread_current_ptr;
-      recovery_thread = _tx_thread_current_ptr;
-      yield();
-}
-
-void _tx_thread_idle_system_restore()
-{
-      _tx_thread_schedule();
-}
-
-void _tx_thread_preempt_restore()
-{
-      printf("_tx_thread_preempt_restore\n");
-      save_flag++;
-      if(save_thread == NULL)
-            save_thread = _tx_thread_current_ptr;
-      recovery_thread = _tx_thread_execute_ptr;
-      yield();
-      // if(_tx_timer_time_slice == 0)
-      // {
-      //       _tx_thread_dont_save_ts();
-      // }
-      // else 
-      // {
-      //       _tx_thread_current_ptr -> tx_thread_time_slice =  _tx_timer_time_slice;
-      //       _tx_timer_time_slice =  0;
-      // }
+                        
+                        Context * temp = recovery_thread -> tx_thread_stack_ptr;
+                        *c = *temp;
+                        //printf("restore sp :%p\n",recovery_thread -> tx_thread_stack_ptr);
+                        // memcpy(c,recovery_thread -> tx_thread_stack_ptr, sizeof(Context));
+                        // memset(recovery_thread -> tx_thread_stack_ptr,0,sizeof(Context));
+                       // c->GPRSP = sp;
+                        //printf("restore out %p\n",recovery_thread-> tx_thread_stack_ptr);
+                        break; 
+                  }
+                  
+            }
+            case EVENT_IRQ_TIMER: {
+                  //printf("time irq\n");
+                  /* Call ThreadX context save for interrupt preparation.  */
+                  _tx_thread_context_save();
             
+                  /* Call the ThreadX system timer interrupt processing.  */
+                  _tx_timer_interrupt();
+
+                  /* Call ThreadX context restore for interrupt completion.  */
+                  _tx_thread_context_restore();
+                  break;
+            } 
+            default: break;//printf("Unhandled event ID = %d\n", e.event); assert(0);
+      }
+      return c;
 }
 
-void _tx_thread_dont_save_ts()
+void __am_cte_init() {
+  cte_init(ev_handler);
+}
+
+void _tx_thread_not_nested_save();
+void _tx_thread_nested_save();
+void _tx_thread_idle_system_save();
+
+
+VOID   _tx_thread_context_save(VOID)
 {
-      if(save_thread == NULL) save_thread = _tx_thread_current_ptr;
-      _tx_thread_current_ptr =  TX_NULL;
-      _tx_thread_idle_system_restore();
+      //printf("save in\n");
+      if ((_tx_thread_current_ptr) && (_tx_thread_system_state == 0))
+      {
+            save_flag++;
+            yield();   //stack_pointer may cause the memory leak
+      }
 
+      _tx_thread_system_state++;
 }
 
-void _tx_thread_no_preempt_restore()
-{
-      printf("_tx_thread_no_preempt_restore\n");
-      recovery_thread = _tx_thread_current_ptr;
-      yield();
-      return ;
-}
+
+// VOID   _tx_thread_context_save(VOID)
+// {
+//       if(_tx_thread_system_state == 0)  //not nested store
+//       {
+//             _tx_thread_not_nested_save();
+//       }
+//       else
+//       {
+//             _tx_thread_nested_save();
+//       }
+// }
+// 
+// void _tx_thread_not_nested_save()
+// {
+//       _tx_thread_system_state++;
+//       if(_tx_thread_current_ptr == NULL)   //question
+//             _tx_thread_idle_system_save();
+//       else 
+//       {
+//             save_flag++;
+//             yield();   //stack_pointer may cause the memory leak
+//       }
+           
+// }
+
+
+// void _tx_thread_nested_save()
+// {
+//       _tx_thread_system_state++;
+//       save_flag++;
+//       yield();
+// }
+
+// void _tx_thread_idle_system_save()
+// {
+// #ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
+//       _tx_execution_isr_enter()                     // Call the ISR execution enter function
+// #endif
+
+// }
+      

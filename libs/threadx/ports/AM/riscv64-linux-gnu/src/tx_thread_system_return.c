@@ -20,27 +20,24 @@
 /**************************************************************************/
 /**************************************************************************/
 
-
-#define TX_SOURCE_CODE
+#define    TX_SOURCE_CODE
 
 
 /* Include necessary system files.  */
 
 #include "tx_api.h"
 #include "tx_thread.h"
-#include <stdio.h>
-#include <unistd.h>
+#include "tx_timer.h"
+// #include <stdio.h>
+
 #include "am.h"
+#include <stdbool.h>
 #include <assert.h>
-/* Prototype for new thread entry function.  */
-
-
-
 /**************************************************************************/ 
 /*                                                                        */ 
 /*  FUNCTION                                               RELEASE        */ 
 /*                                                                        */ 
-/*    _tx_thread_stack_build                              Linux/GNU       */ 
+/*    _tx_thread_system_return                            Linux/GNU       */ 
 /*                                                           6.1          */
 /*  AUTHOR                                                                */
 /*                                                                        */
@@ -48,32 +45,36 @@
 /*                                                                        */
 /*  DESCRIPTION                                                           */
 /*                                                                        */ 
-/*    This function builds a stack frame on the supplied thread's stack.  */
-/*    The stack frame results in a fake interrupt return to the supplied  */
-/*    function pointer.                                                   */ 
+/*    This function is target processor specific.  It is used to transfer */ 
+/*    control from a thread back to the system.  Only a minimal context   */ 
+/*    is saved since the compiler assumes temp registers are going to get */ 
+/*    slicked by a function call anyway.                                  */ 
 /*                                                                        */ 
 /*  INPUT                                                                 */ 
 /*                                                                        */ 
-/*    thread_ptr                            Pointer to thread control blk */
-/*    function_ptr                          Pointer to return function    */
+/*    None                                                                */ 
 /*                                                                        */ 
 /*  OUTPUT                                                                */ 
 /*                                                                        */ 
-/*    None                                                                */
+/*    None                                                                */ 
 /*                                                                        */ 
 /*  CALLS                                                                 */ 
 /*                                                                        */ 
-/*    pthread_create                                                      */ 
-/*    pthread_setschedparam                                               */ 
-/*    _tx_linux_thread_suspend                                            */ 
-/*    sem_init                                                            */ 
-/*    printf                                                              */ 
-/*    _tx_linux_thread_resume                                             */ 
+/*    _tx_linux_debug_entry_insert                                        */ 
+/*    tx_linux_mutex_lock                                                 */ 
+/*    pthread_self                                                        */ 
+/*    pthread_getschedparam                                               */ 
+/*    pthread_equal                                                       */ 
+/*    tx_linux_mutex_recursive_unlock                                     */ 
+/*    tx_linux_mutex_unlock                                               */ 
+/*    pthread_exit                                                        */ 
+/*    tx_linux_sem_post                                                   */ 
+/*    sem_trywait                                                         */
+/*    tx_linux_sem_wait                                                   */ 
 /*                                                                        */ 
 /*  CALLED BY                                                             */ 
 /*                                                                        */ 
-/*    _tx_thread_create                     Create thread service         */
-/*    _tx_thread_reset                      Reset thread service          */ 
+/*    ThreadX components                                                  */ 
 /*                                                                        */ 
 /*  RELEASE HISTORY                                                       */ 
 /*                                                                        */ 
@@ -82,23 +83,28 @@
 /*  09-30-2020     William E. Lamie         Initial Version 6.1           */
 /*                                                                        */
 /**************************************************************************/
-Context  ref;
-VOID   _tx_thread_stack_build(TX_THREAD *thread_ptr, VOID (*function_ptr)(VOID))
+void _tx_thread_dont_save_ts(void);
+extern bool save_flag;
+VOID   _tx_thread_system_return(VOID)
 {
-  
+   
+   save_flag ++;
+  // printf("in return\n");
+   assert(_tx_thread_current_ptr);
+   
+   yield();
+  // printf("out return\n");
+   iset(0);
+#ifdef TX_ENABLE_EXECUTION_CHANGE_NOTIFY
+   _tx_execution_thread_exit();                   // Call the thread execution exit function
+#endif
+   if (_tx_timer_time_slice){
+      _tx_thread_current_ptr -> tx_thread_time_slice =  _tx_timer_time_slice;
+      _tx_timer_time_slice =  0;
+   }
+   else{
+      _tx_thread_dont_save_ts();
+   }
 
-  Area kstack;
-
-
-  // kstack.end= thread_ptr->tx_thread_stack_start + sizeof(Context) ;
-  // kstack.start = thread_ptr->tx_thread_stack_start;
-
-  kstack.end = thread_ptr->tx_thread_stack_end -(uintptr_t)thread_ptr->tx_thread_stack_end % sizeof(uintptr_t);
-  kstack.start = thread_ptr->tx_thread_stack_start ;
-
-  
-  Context *context = kcontext(kstack, function_ptr, NULL);
-  printf("context :%p  \n",context);
-  thread_ptr->tx_thread_stack_ptr = context;
 }
 
