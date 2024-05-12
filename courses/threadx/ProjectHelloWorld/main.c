@@ -99,16 +99,17 @@ void  Urgent_entry(ULONG thread_input)
     ULONG current_time;
     while (1)
     {
+        printf("11111\n\n\n\n");
         /* Activity 1:  2 timer ticks  *** preparation ****/
         tx_thread_sleep(2);
-
+        printf("22222");
         /* Activity 2:  4 timer ticks  *** critical section *** */
         /* Get the mutex with suspension */
         tx_mutex_get(&Processor, TX_WAIT_FOREVER);
         tx_thread_sleep(4);
         /* Release the mutex */
         tx_mutex_put(&Processor);
-
+        printf("3333333");
         current_time = tx_time_get();
         printf("Current Time: %5lu  Urgent Thread finished a cycle...\n",
             current_time);
